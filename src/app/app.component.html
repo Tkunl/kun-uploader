@@ -1,0 +1,33 @@
+<div class="main">
+  <h3>Upload 测试</h3>
+  <nz-upload
+    [nzFileList]="fileList"
+    [nzBeforeUpload]="beforeUpload"
+    [nzRemove]="handleRemove"
+  >
+    <button nz-button [disabled]="isDisabledUploadBtn">
+      <span nz-icon nzType="upload"></span>
+      Upload
+    </button>
+  </nz-upload>
+
+  <br>
+  <div>
+    <div class="status">UploadStatus: {{ minioSvc.uploadStatus.value }}</div>
+    <nz-progress [nzPercent]="curPercent"></nz-progress>
+  </div>
+
+  <hr>
+  <div>
+    <div>使用了 WebWorker & Pool</div>
+    <button nz-button (click)="testMd5WorkerPool()">Get Md5</button>
+    <button nz-button (click)="testCrc32WorkerPool()">Get Crc32</button>
+    <button nz-button (click)="testMtWorkerPool()">Get MerkleTree Hash</button>
+  </div>
+
+  <hr>
+  <div>
+    <div>组合式的上传方案</div>
+    <button nz-button (click)="handleUpload2()">Upload_V2</button>
+  </div>
+</div>
