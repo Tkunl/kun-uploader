@@ -9,6 +9,7 @@ import { BehaviorSubject } from 'rxjs'
 import { WorkerService } from '../worker/worker.service'
 import { MerkleTree } from '../worker/util/merkle-tree'
 import { PromisePool } from '../utils/promise-pool'
+import { getArrParts } from '../utils/common-util'
 
 interface IMetaData {
   size: number,
@@ -49,17 +50,32 @@ export class MinioUploaderService {
     // 文件分片
     this.uploadStatus.next('Parsing file ...')
     const chunksBlob = sliceFile(file, chunkSize)
-    const chunksBuf = await getArrayBufFromBlobsV2(chunksBlob)
-
-    // 按文件分片数量执行不同 Hash 策略
     let chunksHash: string[] = []
-    if (chunksBuf.length === 1) {
-      chunksHash = [ getMD5FromArrayBuffer(chunksBuf[0]) ]
-    } else if (chunksBuf.length <= BORDER_COUNT) {
-      chunksHash = await this.workerSvc.getMD5ForFiles(chunksBuf)
+    if (chunksBlob.length === 1) {
+      chunksHash = [getMD5FromArrayBuffer(await chunksBlob[0].arrayBuffer())]
     } else {
-      chunksHash = await this.workerSvc.getCRC32ForFiles(chunksBuf)
+      let chunksBuf: ArrayBuffer[] = []
+      // 将文件分片进行分组, 组内任务并行执行, 组外任务串行执行
+      const chunksPart = getArrParts<Blob>(chunksBlob, this.workerSvc.MAX_WORKERS)
+      const tasks = chunksPart.map(
+        (part) => async () => {
+          // 手动释放上一次用于计算 Hash 的 ArrayBuffer
+          // !!! 现在只会占用 MAX_WORKERS * 分片数量大小的内存 !!!
+          chunksBuf.length = 0
+          chunksBuf = await getArrayBufFromBlobsV2(part)
+          // 按文件分片数量执行不同 Hash 策略
+          return chunksBlob.length <= BORDER_COUNT ?
+            await this.workerSvc.getMD5ForFiles(chunksBuf) :
+            await this.workerSvc.getCRC32ForFiles(chunksBuf)
+        },
+      )
+      for (const task of tasks) {
+        const result = await task()
+        chunksHash.push(...result)
+      }
     }
+
+
     const merkleTree = new MerkleTree(chunksHash)
     const fileHash = merkleTree.getRootHash()
 
